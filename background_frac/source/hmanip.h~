@@ -1,0 +1,404 @@
+#include <assert.h>
+#include <TH1.h>
+#include <TH1F.h>
+#include <TCanvas.h>
+#include <iostream>
+#include <TLegend.h>
+#include <math.h>
+
+using namespace std;
+
+enum DATA_TYPE {COMP0, COMP1, COMP2, RATIO, STANDALONE, SYSERROR};
+
+void set_style(TH1 *h, DATA_TYPE iStyle, float xmin = 1., float xmax = 0.);
+
+TH1 *get_style(TH1 *hin, DATA_TYPE iStyle, float xmin = 1., float xmax = 0.)
+{
+	TH1 *h = (TH1 *)hin->Clone(hin->GetName());
+	set_style(h,iStyle,xmin,xmax);
+	return h;
+}
+
+//=============================================================
+
+//=============================================================
+void set_style(TH1 *h, DATA_TYPE iStyle, float xmin, float xmax)
+{
+	float integral = h->Integral(h->FindBin(xmin),h->FindBin(xmax));
+	if(xmin>xmax) integral = h->GetEntries();
+	if(xmin<xmax) h->GetXaxis()->SetRangeUser(xmin,xmax);
+
+	h->GetYaxis()->CenterTitle();
+	h->GetYaxis()->SetTitleOffset(1.3);
+	//h->SetStats(false);
+
+	switch(iStyle)
+	{
+		case COMP0://for 1-D COMP0 style for compare
+			h->SetStats(false);
+			h->Scale(1.0/integral);
+			h->SetLineColor(kRed);
+			h->SetFillColor(kRed);
+			h->SetFillStyle(3005);
+			break;
+		case COMP1://for 1-D COMP1 style for compare
+			h->SetStats(false);
+			h->Scale(1.0/integral);
+			h->SetLineColor(kBlue);
+			h->SetFillColor(kBlue);
+			h->SetFillStyle(3004);
+			break;
+		case COMP2://for 1-D COMP0 style for compare
+			h->SetStats(false);
+			h->Scale(1.0/integral);
+			h->SetLineColor(kGreen);
+			h->SetFillColor(kGreen);
+			h->SetFillStyle(3006);
+			break;
+		case RATIO:
+			//h->Sumw2();
+			h->SetStats(false);
+			h->SetLineColor(kBlue);
+			h->SetMarkerColor(kBlue);
+			h->SetMarkerStyle(4);
+			h->GetYaxis()->CenterTitle();
+			h->GetYaxis()->SetTitleOffset(1.3);
+			break;
+		case STANDALONE:
+			//h->Sumw2();
+			h->SetLineColor(kRed);
+			h->SetMarkerColor(kRed);
+			h->SetMarkerStyle(4);
+			break;
+		case SYSERROR:
+			h->SetLineColor(kRed);
+			//h->SetMarkerColor(0);
+			//h->SetMarkerStyle(1);
+			h->SetFillStyle(0);
+			break;
+		default:
+			break;
+	}
+}
+
+
+//=============================================================
+
+//=============================================================
+
+//=============================================================
+//TGraphError *get_graph(const TH1F *hin,const char *name="")
+//{
+//	TGraphError *g = new TGraphError();
+//	if(name!=0)
+//	{
+//		g->SetName(name);
+//		g->SetTitle(name);
+//	}
+//	else
+//	{
+//		g->SetName(hin->GetName());
+//		g->SetTitle(hin->GetTitle);
+//	}
+//}
+//=============================================================
+TH1F *rebin(const TH1F *hin, const int nbin, float *abin, const char *name="")
+{
+	std::string h_name = name;
+	if(h_name.compare("")==0)h_name = hin->GetName();
+
+	TH1F *th1f = new TH1F(h_name.data(),hin->GetTitle(),nbin, abin);
+
+	for(int j=1;j<=hin->GetNbinsX();j++)
+	{
+		float bin_center = hin->GetXaxis()->GetBinCenter(j);
+		float weight = hin->GetBinContent(j);
+
+		th1f->Fill(bin_center,weight);
+	}
+
+	return th1f;
+}
+
+//=============================================================
+TH1F *get_cdf_histo(const TH1F* h)
+{
+	std::string name = h->GetName();
+	name += "_eff";
+	TH1F *hcdf = (TH1F*)h->Clone(name.data());
+	hcdf->Reset();
+
+	float integral = h->Integral();
+	assert(integral>0);
+
+	int nbin = h->GetNbinsX();
+
+	float cumulated = 0;
+	for(int ibin=1;ibin<=nbin;ibin++)
+	{
+		cumulated = h->Integral(1,ibin); 
+		hcdf->SetBinContent(ibin,1.0*cumulated/integral);
+		hcdf->SetBinError(ibin,0.);
+	}
+
+	return hcdf;
+}
+
+//=============================================================
+TH1F *get_ratio_histo(TH1F *h_in_num, TH1F *h_in_den, float xmin = 1, float xmax = 0)
+{
+	TH1F *h_num = (TH1F*)get_style(h_in_num,RATIO,xmin,xmax);
+	TH1F *h_den = (TH1F*)get_style(h_in_den,RATIO,xmin,xmax);
+
+	if(h_num->GetNbinsX()!=h_den->GetNbinsX())
+	{
+		cout<<"WARN: h_num->GetNbinsX()!=h_den->GetNbinsX()."<<endl;
+		return NULL;
+	}
+	std::string name = h_num->GetName();
+	name += h_den->GetName();
+	name += "_ratio";
+	TH1F *h_ratio = (TH1F*)h_num->Clone(name.data());
+
+	for(int ibin=1;ibin<=h_num->GetNbinsX();ibin++)
+	{
+		float var = 0;
+		float err = 0;
+
+		if(h_den->GetBinContent(ibin)==0)
+		{
+			if(h_num->GetBinContent(ibin)!=0)
+			{
+				cout<<"WARN: h_den->GetBinContent(ibin)==0 && h_num->GetBinContent(ibin)!=0."<<endl;
+				//return NULL;
+				var = 0;
+				err = 0;
+			}
+			else
+			{
+				var = 0;
+				err = 0;
+			}
+		}
+		else if(h_den->GetBinContent(ibin)==0 || h_num->GetBinContent(ibin)==0) {var = 0; err = 0;}
+		else
+		{
+			var = 1.0*h_num->GetBinContent(ibin) / h_den->GetBinContent(ibin);
+
+			/*
+				 err = var * sqrt(
+				 1.0/TMath::Abs(h_num->GetBinContent(ibin))
+				 + 1.0/TMath::Abs(h_den->GetBinContent(ibin)));
+				 */
+			err = var * sqrt(
+					(h_num->GetBinError(ibin)/h_num->GetBinContent(ibin)) * (h_num->GetBinError(ibin)/h_num->GetBinContent(ibin))
+					+ 
+					(h_den->GetBinError(ibin)/h_den->GetBinContent(ibin)) * (h_den->GetBinError(ibin)/h_den->GetBinContent(ibin))
+					);
+		}
+
+		h_ratio->SetBinContent(ibin,var);
+		h_ratio->SetBinError(ibin,err);
+	}
+
+	set_style(h_ratio,RATIO);
+	return h_ratio;
+}
+
+//=============================================================
+TCanvas *get_canvas_ratio(TH1F *h0, TH1F *h1, std::string h0_name = "", std::string h1_name = "", float xmin = 1, float xmax = 0)
+{
+	std::string c_name = "c_ratio_";
+	c_name += h0->GetName();
+	c_name += h1->GetName();
+	//c_name = "canvas";
+	TCanvas *c = new TCanvas(c_name.data(),c_name.data(),100,100,1000,800);
+	c->SetGrid();
+
+	TH1F *h = get_ratio_histo(h0,h1,xmin,xmax);
+	set_style(h,RATIO);
+
+	std::string h_title = "";
+	if(h0_name!="" && h1_name!="")
+	{
+		h_title += (h0_name.data());
+		h_title += " / ";
+		h_title += (h1_name.data());
+	}
+	else if(h0_name!="" && h1_name=="")
+	{
+		h_title += (h0_name.data());
+	}
+	else
+	{
+		h_title += (h0->GetName());
+		h_title += " / ";
+		h_title += (h1->GetName());
+	}
+
+	h->SetTitle(h_title.data());
+	//h->SetTitle(";N_{ch};N_{J/#psi} / N_{MB}");
+
+	h->Draw("ep");
+
+	c->Update();
+	return c;
+}
+
+//=============================================================
+TCanvas *get_canvas_compare(TH1F *hin0, TH1F *hin1, std::string h0_name = "", std::string h1_name = "", /*std::string title = "compare",*/ float xmin = 1, float xmax = 0)
+{
+	std::string c_name = "c_compare_";
+	c_name += hin0->GetName();
+	c_name += hin1->GetName();
+	//c_name = "canvas";
+	TCanvas *c = new TCanvas(c_name.data(),c_name.data(),100,100,1000,800);
+	c->SetGrid();
+
+	TH1F *h0 = (TH1F*)get_style(hin0,COMP0,xmin,xmax);
+	TH1F *h1 = (TH1F*)get_style(hin1,COMP1,xmin,xmax);
+
+
+	float max = TMath::Max(h0->GetMaximum(),h1->GetMaximum());
+	float min = TMath::Max(h0->GetMinimum(),h1->GetMinimum());
+
+	h0->SetMaximum(1.1*max);
+	h0->SetMinimum(min);
+	//h0->SetTitle(title.data());
+
+	h0->Draw("");
+	h1->Draw("same");
+
+	//TLegend *leg = new TLegend(0.75,0.75,0.90,0.90);
+	TLegend *leg = new TLegend(0.45,0.45,0.90,0.90);
+	leg->SetFillColor(0);
+	if(h0_name!="") leg->AddEntry(h0,h0_name.data(),"f");
+	else leg->AddEntry(h0,h0->GetName(),"f");
+	if(h1_name!="") leg->AddEntry(h1,h1_name.data(),"f");
+	else leg->AddEntry(h1,h1->GetName(),"f");
+	leg->Draw();
+
+	c->Update();
+	return c;
+}
+
+
+//=============================================================
+TCanvas *get_canvas_compare(TH1F *hin0, TH1F *hin1, TH1F *hin2, std::string h0_name = "", std::string h1_name = "", std::string h2_name = "", float xmin = 1, float xmax = 0)
+{
+	std::string c_name = "c_compare_";
+	c_name += hin0->GetName();
+	c_name += hin1->GetName();
+	c_name += hin2->GetName();
+	//c_name = "canvas";
+	TCanvas *c = new TCanvas(c_name.data(),c_name.data(),100,100,1000,800);
+	c->SetGrid();
+
+	TH1F *h0 = (TH1F*)get_style(hin0,COMP0,xmin,xmax);
+	TH1F *h1 = (TH1F*)get_style(hin1,COMP1,xmin,xmax);
+	TH1F *h2 = (TH1F*)get_style(hin2,COMP2,xmin,xmax);
+
+
+	float max = TMath::Max(h0->GetMaximum(),h1->GetMaximum());
+	float min = TMath::Max(h0->GetMinimum(),h1->GetMinimum());
+
+	h0->SetMaximum(1.1*max);
+	h0->SetMinimum(min);
+	h0->SetTitle("compare");
+
+	h0->Draw("");
+	h1->Draw("same");
+	h2->Draw("same");
+
+	//TLegend *leg = new TLegend(0.75,0.75,0.90,0.90);
+	TLegend *leg = new TLegend(0.45,0.45,0.90,0.90);
+	leg->SetFillColor(0);
+	if(h0_name!="") leg->AddEntry(h0,h0_name.data(),"f");
+	else leg->AddEntry(h0,h0->GetName(),"f");
+	if(h1_name!="") leg->AddEntry(h1,h1_name.data(),"f");
+	else leg->AddEntry(h1,h1->GetName(),"f");
+	if(h2_name!="") leg->AddEntry(h2,h2_name.data(),"f");
+	else leg->AddEntry(h2,h2->GetName(),"f");
+	leg->Draw();
+
+	c->Update();
+	return c;
+}
+
+TH1F *scalex(TH1F *hin, double scaler)
+{
+	int nbin = hin->GetXaxis()->GetNbins();
+	double xmin = scaler*(hin->GetXaxis()->GetXmin());
+	double xmax = scaler*(hin->GetXaxis()->GetXmax());
+	cout<<" "<<xmin<<" "<<xmax<<endl;
+	TH1F *h = new TH1F(Form("%s_scalex",hin->GetName()),hin->GetTitle(),nbin,xmin,xmax);
+	for(int i=1;i<=nbin;i++)
+	{
+		double y = hin->GetBinContent(i);
+		double ey= hin->GetBinError(i);
+		//double x = hin->GetXaxis()->GetBinCenter(i);
+		//double xnew = scaler*x;
+		//h->Fill(xnew,y);
+		h->SetBinContent(i,y);
+		h->SetBinError(i,ey);
+	}
+
+	return h;
+}
+
+//!
+double get_binomial_error(const double a, const double b)
+{
+	if(a<=0||b<=0)
+	{
+		cout<<"negative input return 0"<<endl;
+		return 0;
+	}
+
+	double r = 1.0*a/b;
+	if(r>1)
+	{
+		cout<<"r>1 return 0"<<endl;
+		return 0;
+	}
+
+	double e = 0;
+
+	e = sqrt(r*(1-r)/b);
+
+	return e;
+}
+//!
+double get_ratio_error(const double a, const double b, const double ea = 0, const double eb = 0)
+{
+	if(a<=0||b<=0||ea<0||eb<0)
+	{
+		cout<<"negative input return 0"<<endl;
+		return 0;
+	}
+
+	double r = 1.0*a/b;
+
+	double e = 0;
+	if(ea!=0&&eb!=0)
+		e =
+			r*sqrt(ea*ea/a/a + eb*eb/b/b);
+
+	else
+		e =
+			r*sqrt(1.0/a + 1.0/b);
+
+	return e;
+}
+
+
+TPave *mybox(float x0, float y0, float x1, float y1, int color = 416, int style = 3001)
+{
+	TPave *b = new TPave(x0,y0,x1,y1);
+
+	b->SetBorderSize(0);
+	b->SetFillColor(color);
+	b->SetFillStyle(style);
+
+	return b;
+}
