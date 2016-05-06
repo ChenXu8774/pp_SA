@@ -1,0 +1,9 @@
+Universe      = vanilla
+Notification  = Error
+Getenv        = true
+Executable    = jobscript
+Output        = jobscript.out
+Error         = jobscript.err
+Log           = jobscript.log
+Coresize      = 0
+Queue
