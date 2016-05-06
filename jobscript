@@ -1,0 +1,3 @@
+#!/bin/csh -f
+
+  root.exe -q -b Fun4FVTX_RecoDST_SpinAna.C
